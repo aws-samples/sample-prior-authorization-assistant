@@ -71,7 +71,6 @@ class PolicyRetrievalService:
         # Configuration
         self.knowledge_base_id = os.getenv('KNOWLEDGE_BASE_ID')
         self.policies_bucket = os.getenv('POLICIES_BUCKET')
-        self.embedding_model = "amazon.titan-embed-text-v1"
         
         if not self.knowledge_base_id:
             logger.warning("KNOWLEDGE_BASE_ID not set, using fallback search")
