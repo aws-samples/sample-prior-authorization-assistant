@@ -14,6 +14,7 @@ from datetime import datetime
 from dataclasses import dataclass
 
 from common.aws_clients import get_bedrock_service
+from common.model_config import resolve as resolve_model_role
 from common.models import ExtractedData, SelectedPolicy, ClinicalCriterion
 from common.exceptions import PolicySelectionError, AWSServiceError
 from common.decorators import handle_processing_errors, monitor_performance, retry_with_backoff
@@ -42,7 +43,8 @@ class IntelligentPolicySelector:
     def __init__(self):
         self.bedrock_service = get_bedrock_service()
         self.policy_retrieval = PolicyRetrievalService()
-        self.model_id = "amazon.nova-pro-v1:0"
+        # Used only by _extract_clinical_summary; other calls use invoke_role
+        self.model_id = resolve_model_role("policy_selection").model_id
         self.selection_criteria = PolicySelectionCriteria()
     
     @handle_processing_errors
@@ -408,8 +410,8 @@ class IntelligentPolicySelector:
         
         try:
             # Get AI recommendation
-            response = self.bedrock_service.invoke_model(
-                model_id=self.model_id,
+            response = self.bedrock_service.invoke_role(
+                "policy_selection",
                 prompt=prompt,
                 max_tokens=1000
             )

@@ -26,7 +26,7 @@ The solution uses a serverless, event-driven architecture:
 | Frontend | Amazon S3 + Amazon CloudFront | React/TypeScript web application |
 | API | Amazon API Gateway | REST API with rate limiting |
 | Document Processing | AWS Lambda (Python 3.11) | Extract medical data from documents |
-| AI/ML | Amazon Bedrock (Claude Sonnet 4.6) | Clinical analysis and policy matching |
+| AI/ML | Amazon Bedrock (Amazon Nova Pro, Claude Sonnet 4.6) | Clinical analysis and policy matching (see [Model configuration](#model-configuration)) |
 | Document OCR | Amazon Textract | PDF text extraction |
 | Policy Store | Amazon Bedrock Knowledge Base | Payor policy retrieval (RAG) |
 | Orchestration | AWS Step Functions | Multi-step validation workflow |
@@ -51,16 +51,55 @@ Before deploying this solution, ensure you have the following installed:
 
 ### Supported AWS Regions
 
-This solution requires Amazon Bedrock with Claude Sonnet 4.6 model access. Verify [model availability](https://docs.aws.amazon.com/bedrock/latest/userguide/models-regions.html) in your target region. The default deployment region is `us-east-1`.
+This solution requires Amazon Bedrock with Amazon Nova Pro and Claude Sonnet 4.6 model access. Verify [model availability](https://docs.aws.amazon.com/bedrock/latest/userguide/models-regions.html) in your target region. The default deployment region is `us-east-1`.
 
 ### Amazon Bedrock Setup
 
 Before deployment, you must [enable model access](https://docs.aws.amazon.com/bedrock/latest/userguide/model-access.html) for the following models in the Amazon Bedrock console:
 
-- Anthropic Claude Sonnet 4.6 (for clinical analysis and policy matching)
+- Amazon Nova Pro (for medical data extraction, policy selection, compliance assessment, evidence mapping, and gap analysis)
+- Anthropic Claude Sonnet 4.6 (for clinical criteria extraction, policy metadata extraction, and Knowledge Base response generation)
 - Amazon Titan Embeddings V2 (for the Knowledge Base vector store)
 
 The CDK stack automatically creates the Amazon Bedrock Knowledge Base, S3 Vectors storage, and data source. No manual KB setup is required.
+
+### Model configuration
+
+Each pipeline step uses the Bedrock model and sampling settings below. They are defined in `src/common/model_config.py`. Generation calls use the Amazon Bedrock Converse API, except `kb_generation`, which uses Knowledge Base RetrieveAndGenerate.
+
+| Step (role) | Lambda function | Default model | Sampling |
+|-------------|-----------------|---------------|----------|
+| `medical_extraction` | Extractor | `amazon.nova-pro-v1:0` | temperature 0.1, top_p 0.9 |
+| `policy_selection` | Selector \* | `amazon.nova-pro-v1:0` | temperature 0.1, top_p 0.9 |
+| `policy_criteria_extraction` | Selector \* | `amazon.nova-pro-v1:0` | temperature 0.1, top_p 0.9 |
+| `compliance_assessment` | Reviewer | `amazon.nova-pro-v1:0` | temperature 0.1, top_p 0.9 |
+| `evidence_mapping` | Reviewer | `amazon.nova-pro-v1:0` | temperature 0.1, top_p 0.9 |
+| `gap_analysis` | Reviewer | `amazon.nova-pro-v1:0` | temperature 0.1, top_p 0.9 |
+| `clinical_criteria_extraction` | ExtractClinicalCriteria | `us.anthropic.claude-sonnet-4-6` | temperature 0.0 |
+| `policy_metadata_extraction` | MetadataExtractor, MetadataProcessor | `us.anthropic.claude-sonnet-4-6` | temperature 0.0 |
+| `kb_generation` | IntelligentPolicySelector | `us.anthropic.claude-sonnet-4-6` | model default |
+
+\* The Selector Lambda is deployed, but the Step Functions workflow does not invoke it. In the deployed workflow, policy selection runs in IntelligentPolicySelector (`kb_generation`).
+
+**Default data routing.** The three Claude Sonnet 4.6 steps use `us.anthropic.claude-sonnet-4-6`, a cross-Region inference profile. In the default deployment, prompts for these steps, which include clinical content such as diagnosis codes and patient context, can be processed in other AWS Regions in the United States. The Nova Pro steps use the base model ID and run in the deployment Region.
+
+#### Overriding a model
+
+Overrides are environment variables on the Lambda function that runs the step:
+
+- `PA_MODEL_ID_<ROLE>` (for example `PA_MODEL_ID_GAP_ANALYSIS`) overrides one step.
+- `PA_MODEL_ID` overrides every step in that Lambda function. A step-specific variable takes precedence.
+- `PA_TEMPERATURE_<ROLE>` and `PA_TOP_P_<ROLE>` set sampling for an overridden step, as numbers from 0 to 1. Any other value raises a configuration error when the step runs. When a step's model is overridden, its default sampling settings are not carried over, because valid settings differ by model (for example, some models reject `temperature` and `top_p` together). An override equal to the default model ID keeps the default sampling. `kb_generation` uses only the model ID and sends no sampling settings.
+
+Set overrides in the CDK stack, not in the Lambda console. Console changes aren't in the stack, so they drift from it and can be overwritten by a later deployment. Functions in `infrastructure/stacks/consolidated_stack.py` share `common_env`; MetadataExtractor adds its own variables on top of it. MetadataProcessor is defined in `infrastructure/stacks/policy_extractor_stack.py`, which has its own `common_env`.
+
+Before overriding a model, check the following:
+
+- **IAM.** The Lambda execution role allows a fixed list of models (`infrastructure/stacks/consolidated_stack.py`). Besides the defaults, the list includes the base model IDs `amazon.nova-lite-v1:0`, `amazon.nova-micro-v1:0`, `anthropic.claude-3-haiku-20240307-v1:0`, and `anthropic.claude-3-5-haiku-20241022-v1:0`. Other models, including newer Claude models and any inference profile other than `us.anthropic.claude-sonnet-4-6`, need an IAM change. Changing it is an operator decision, and this solution does not make it for you. The foundation-model entries use a Region wildcard so the `us.` profile can reach other US Regions.
+- **Data routing.** Model IDs that start with `us.` are cross-Region inference profiles. Because IAM already allows `us.anthropic.claude-sonnet-4-6`, setting `PA_MODEL_ID` to it on a function such as Extractor or Reviewer moves every step in that function, including full clinical document text, to cross-Region processing with no IAM change. Choose model IDs that match your data residency requirements.
+- **Failures are silent in some steps.** If the overridden model is denied or fails, or a sampling override is invalid, five steps log the error and continue instead of failing the workflow. Clinical criteria extraction uses a generic default criterion. Evidence mapping and gap analysis return no results. Policy metadata extraction writes minimal metadata. Compliance assessment marks each affected criterion as not met and flags it for manual review. After changing a model, check each function's CloudWatch logs for warnings and errors before relying on results.
+- **Model access and Region.** Enable access to the new model in the Amazon Bedrock console, and check the model card for the Regions where the base model ID supports on-demand invocation. Elsewhere, use an inference profile ID, which also needs an IAM change.
+- **Knowledge Base support.** `kb_generation` must use a model that supports Bedrock Knowledge Bases.
 
 ## Deployment
 
