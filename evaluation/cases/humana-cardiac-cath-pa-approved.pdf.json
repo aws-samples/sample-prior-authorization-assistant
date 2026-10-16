@@ -1,0 +1,34 @@
+{
+  "case_id": "humana-cardiac-cath-pa-approved.pdf",
+  "source_file": "samples/humana-cardiac-cath-pa-approved.pdf",
+  "format": "pdf",
+  "expected": {
+    "payor": "Humana",
+    "cpt_codes": [
+      "93458"
+    ],
+    "icd_codes": [
+      "I20.9",
+      "I25.10"
+    ]
+  },
+  "provenance": {
+    "payor": {
+      "text": "Humana Inc.",
+      "location": "page 1"
+    },
+    "cpt_codes": {
+      "93458": "page 1"
+    },
+    "icd_codes": {
+      "I20.9": "page 3",
+      "I25.10": "page 3"
+    }
+  },
+  "confirmed": true,
+  "review": {
+    "cpt_codes": "confirmed by Andrew Wint, 2026-10-16",
+    "icd_codes": "confirmed by Andrew Wint, 2026-10-16",
+    "payor": "read from the PDF's 'Payor:' line; not separately reviewed"
+  }
+}

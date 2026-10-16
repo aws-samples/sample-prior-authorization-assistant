@@ -1,0 +1,27 @@
+{
+  "case_id": "anthem-knee-surgery-pa-approved.fhir",
+  "source_file": "samples/anthem-knee-surgery-pa-approved.json",
+  "format": "fhir",
+  "expected": {
+    "payor": "Anthem",
+    "cpt_codes": [
+      "29881"
+    ],
+    "icd_codes": [
+      "M23.201"
+    ]
+  },
+  "provenance": {
+    "payor": {
+      "text": "Anthem Blue Cross Blue Shield",
+      "location": "Coverage.payor -> Organization/insurance-company-002"
+    },
+    "cpt_codes": {
+      "29881": "Claim"
+    },
+    "icd_codes": {
+      "M23.201": "Claim"
+    }
+  },
+  "confirmed": true
+}

@@ -7,15 +7,22 @@ proper error handling, retry logic, and configuration.
 
 import boto3
 import os
-import json
 from decimal import Decimal
 from typing import Optional, Dict, Any, List
 from botocore.exceptions import ClientError, BotoCoreError
 from botocore.config import Config
 import structlog
 
-from .exceptions import AWSServiceError, BedrockThrottlingException
+from .exceptions import AWSServiceError
 from .logging_config import get_logger
+# Re-exported so existing imports from aws_clients keep working
+from .bedrock_converse import (  # noqa: F401
+    ModelUsage,
+    converse,
+    converse_role,
+    register_usage_observer,
+    unregister_usage_observer,
+)
 
 logger = get_logger(__name__)
 
@@ -111,45 +118,15 @@ class BedrockService:
         self.logger = get_logger(self.__class__.__name__)
     
     def invoke_model(self, model_id: str, prompt: str, max_tokens: int = 4000) -> str:
-        """Invoke Bedrock model with error handling and retry logic - Updated for Nova models"""
-        try:
-            # Nova model configuration (Messages API format)
-            body = {
-                "messages": [
-                    {
-                        "role": "user",
-                        "content": [
-                            {
-                                "text": prompt
-                            }
-                        ]
-                    }
-                ],
-                "inferenceConfig": {
-                    "max_new_tokens": max_tokens,
-                    "temperature": 0.1,  # Low temperature for consistent medical analysis
-                    "top_p": 0.9
-                }
-            }
-            
-            response = self.bedrock_client.invoke_model(
-                modelId=model_id,
-                body=json.dumps(body),
-                contentType='application/json'
-            )
-            
-            response_body = json.loads(response['body'].read())
-            # Nova response format
-            return response_body['output']['message']['content'][0]['text']
-            
-        except ClientError as e:
-            error_code = e.response['Error']['Code']
-            if error_code == 'ThrottlingException':
-                raise BedrockThrottlingException(f"Bedrock throttling: {str(e)}")
-            raise AWSServiceError(f"Bedrock model invocation failed: {str(e)}")
-        except Exception as e:
-            raise AWSServiceError(f"Unexpected error in Bedrock invocation: {str(e)}")
-    
+        """Invoke a Bedrock model with the original fixed sampling settings"""
+        # Low temperature for consistent medical analysis
+        return converse(self.bedrock_client, model_id, prompt, max_tokens,
+                        temperature=0.1, top_p=0.9)
+
+    def invoke_role(self, role: str, prompt: str, max_tokens: int) -> str:
+        """Invoke the model configured for a pipeline role"""
+        return converse_role(self.bedrock_client, role, prompt, max_tokens)
+
     def retrieve_from_knowledge_base(self, knowledge_base_id: str, query: str, 
                                    max_results: int = 10, filter: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Retrieve information from Bedrock Knowledge Base with optional metadata filtering"""

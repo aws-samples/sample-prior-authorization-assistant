@@ -1,0 +1,89 @@
+{
+  "git_commit": "a113c8bcec2ff4ca82aa219584bf9a63e6002702",
+  "started_at": "2026-10-16T19:45:44+00:00",
+  "finished_at": "2026-10-16T19:52:43+00:00",
+  "region": "us-east-1",
+  "rows": [
+    {
+      "row": "as-shipped",
+      "model_id": "amazon.nova-pro-v1:0",
+      "sampling": {
+        "temperature": 0.1,
+        "top_p": 0.9
+      },
+      "sampling_note": "role defaults"
+    },
+    {
+      "row": "us.anthropic.claude-sonnet-4-6",
+      "model_id": "us.anthropic.claude-sonnet-4-6",
+      "sampling": {
+        "temperature": 0.1,
+        "top_p": null
+      },
+      "sampling_note": null
+    },
+    {
+      "row": "openai.gpt-oss-120b-1:0",
+      "model_id": "openai.gpt-oss-120b-1:0",
+      "sampling": {
+        "temperature": 0.1,
+        "top_p": null
+      },
+      "sampling_note": null
+    },
+    {
+      "row": "us.anthropic.claude-haiku-4-5-20251001-v1:0",
+      "model_id": "us.anthropic.claude-haiku-4-5-20251001-v1:0",
+      "sampling": {
+        "temperature": 0.1,
+        "top_p": null
+      },
+      "sampling_note": null
+    }
+  ],
+  "trials": 3,
+  "case_ids": [
+    "aetna-physical-therapy-pa-approved.fhir",
+    "aetna-physical-therapy-pa-approved.pdf",
+    "aetna-spinal-fusion-pa-denied.fhir",
+    "anthem-knee-surgery-pa-approved.fhir",
+    "anthem-knee-surgery-pa-approved.pdf",
+    "humana-cardiac-cath-pa-approved.fhir",
+    "humana-cardiac-cath-pa-approved.pdf"
+  ],
+  "textract_input": {
+    "aetna-physical-therapy-pa-approved.pdf": "replayed from evaluation/fixtures/textract/aetna-physical-therapy-pa-approved.json",
+    "anthem-knee-surgery-pa-approved.pdf": "replayed from evaluation/fixtures/textract/anthem-knee-surgery-pa-approved.json",
+    "humana-cardiac-cath-pa-approved.pdf": "replayed from evaluation/fixtures/textract/humana-cardiac-cath-pa-approved.json"
+  },
+  "pricing": {
+    "as_of": "2026-10-16",
+    "source": "AWS Price List API (pricing:GetProducts), us-east-1, OnDemand terms. Service codes: AmazonBedrockFoundationModels (Anthropic models), AmazonBedrock (Amazon and OpenAI models)."
+  },
+  "lifecycle_checks": [
+    {
+      "model_id": "us.anthropic.claude-haiku-4-5-20251001-v1:0",
+      "status": "ACTIVE",
+      "source": "bedrock:GetFoundationModel(anthropic.claude-haiku-4-5-20251001-v1:0)",
+      "checked_at": "2026-10-16T19:45:44+00:00"
+    }
+  ],
+  "unavailable_models": [
+    {
+      "model_id": "us.anthropic.claude-sonnet-5-5",
+      "reason": "AccessDeniedException: not available for this account (2026-10-16)"
+    },
+    {
+      "model_id": "us.anthropic.claude-haiku-5-5",
+      "reason": "AccessDeniedException: not available for this account (2026-10-16)"
+    }
+  ],
+  "notes": [
+    "Only the medical_extraction step runs; no other pipeline step is evaluated.",
+    "Textract input is replayed from fixtures recorded 2026-10-16 through the production DocumentProcessor path. On all three PDFs, synchronous AnalyzeDocument (TABLES, FORMS) fails with UnsupportedDocumentException and the code continues on text detection only, as it does in production.",
+    "FHIR cases make no model call (the FHIR route parses codes from the bundle). They run once per row as a control.",
+    "Payor results pass through MedicalCodeValidator.normalize_payor_name (src/common/validators.py), which maps any name containing 'Blue Cross Blue Shield' to 'Blue Cross Blue Shield' and drops 'Anthem'. The Anthem PDF's payor scored as wrong for every row in this run.",
+    "The FHIR route keeps only the first CPT code in a bundle (src/extractors/fhir_extractor.py, single service_info.cpt_code), so multi-procedure bundles lose codes in the FHIR control rows.",
+    "amazon.nova-pro-v1:0 is not run as a separate row: with this override it sends the same model and sampling as the as-shipped row (an override equal to the default model keeps the default sampling)."
+  ]
+}

@@ -63,7 +63,6 @@ class ComplianceAssessmentEngine:
     
     def __init__(self):
         self.bedrock_service = get_bedrock_service()
-        self.model_id = "amazon.nova-pro-v1:0"
     
     @handle_processing_errors
     @monitor_performance
@@ -126,8 +125,8 @@ class ComplianceAssessmentEngine:
         prompt = self._create_assessment_prompt(criterion, evidence_matches, context)
         
         try:
-            response = self.bedrock_service.invoke_model(
-                model_id=self.model_id,
+            response = self.bedrock_service.invoke_role(
+                "compliance_assessment",
                 prompt=prompt,
                 max_tokens=2000
             )

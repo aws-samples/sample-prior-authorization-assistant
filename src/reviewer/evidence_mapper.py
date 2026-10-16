@@ -59,7 +59,6 @@ class ClinicalEvidenceMapper:
     
     def __init__(self):
         self.bedrock_service = get_bedrock_service()
-        self.model_id = "amazon.nova-pro-v1:0"
     
     @handle_processing_errors
     @monitor_performance
@@ -160,8 +159,8 @@ class ClinicalEvidenceMapper:
         prompt = self._create_evidence_mapping_prompt_direct(criterion, medical_records)
         
         try:
-            response = self.bedrock_service.invoke_model(
-                model_id=self.model_id,
+            response = self.bedrock_service.invoke_role(
+                "evidence_mapping",
                 prompt=prompt,
                 max_tokens=3000
             )

@@ -1,0 +1,36 @@
+{
+  "case_id": "aetna-physical-therapy-pa-approved.pdf",
+  "source_file": "samples/aetna-physical-therapy-pa-approved.pdf",
+  "format": "pdf",
+  "expected": {
+    "payor": "Aetna",
+    "cpt_codes": [
+      "97110",
+      "97140"
+    ],
+    "icd_codes": [
+      "M25.561",
+      "M54.5"
+    ]
+  },
+  "provenance": {
+    "payor": {
+      "text": "Aetna Better Health",
+      "location": "page 3"
+    },
+    "cpt_codes": {
+      "97110": "page 3",
+      "97140": "page 4"
+    },
+    "icd_codes": {
+      "M25.561": "page 3",
+      "M54.5": "page 3"
+    }
+  },
+  "confirmed": true,
+  "review": {
+    "cpt_codes": "confirmed by Andrew Wint, 2026-10-16",
+    "icd_codes": "confirmed by Andrew Wint, 2026-10-16",
+    "payor": "read from the PDF's 'Payor:' line; not separately reviewed"
+  }
+}

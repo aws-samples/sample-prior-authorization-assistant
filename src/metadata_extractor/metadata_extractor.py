@@ -10,6 +10,8 @@ import json
 from typing import Dict, Any, List
 import structlog
 
+from common.bedrock_converse import converse_role
+
 logger = structlog.get_logger(__name__)
 
 
@@ -121,45 +123,22 @@ JSON Response:"""
 
 def _call_bedrock_claude(
     bedrock_client: boto3.client,
-    prompt: str,
-    model_id: str = "us.anthropic.claude-sonnet-4-6"
+    prompt: str
 ) -> str:
     """
-    Call Bedrock Claude model with the extraction prompt.
+    Call the policy metadata extraction model with the extraction prompt.
     
     Args:
         bedrock_client: Boto3 Bedrock Runtime client
         prompt: Extraction prompt
-        model_id: Bedrock model ID
         
     Returns:
         Model response text
     """
-    request_body = {
-        "anthropic_version": "bedrock-2023-05-31",
-        "max_tokens": 2000,
-        "messages": [
-            {
-                "role": "user",
-                "content": prompt
-            }
-        ],
-        "temperature": 0.0  # Deterministic for extraction
-    }
-    
-    response = bedrock_client.invoke_model(
-        modelId=model_id,
-        body=json.dumps(request_body)
+    # Deterministic for extraction (temperature 0.0 by default)
+    return converse_role(
+        bedrock_client, "policy_metadata_extraction", prompt, 2000
     )
-    
-    response_body = json.loads(response['body'].read())
-    
-    # Extract text from Claude response
-    content = response_body.get('content', [])
-    if content and len(content) > 0:
-        return content[0].get('text', '')
-    
-    return ''
 
 
 def _parse_bedrock_response(response_text: str, payor: str) -> Dict[str, Any]:

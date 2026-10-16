@@ -1,0 +1,31 @@
+{
+  "case_id": "aetna-physical-therapy-pa-approved.fhir",
+  "source_file": "samples/aetna-physical-therapy-pa-approved.json",
+  "format": "fhir",
+  "expected": {
+    "payor": "Aetna",
+    "cpt_codes": [
+      "97110",
+      "97140"
+    ],
+    "icd_codes": [
+      "M25.561",
+      "M54.5"
+    ]
+  },
+  "provenance": {
+    "payor": {
+      "text": "Aetna Better Health",
+      "location": "Coverage.payor -> Organization/aetna-insurance"
+    },
+    "cpt_codes": {
+      "97110": "Claim",
+      "97140": "Claim"
+    },
+    "icd_codes": {
+      "M25.561": "Claim",
+      "M54.5": "Claim"
+    }
+  },
+  "confirmed": true
+}
