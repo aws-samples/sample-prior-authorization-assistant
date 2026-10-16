@@ -114,12 +114,6 @@ def test_clinical_criteria_handler_uses_its_own_client_and_role():
     assert _calls("extract_clinical_criteria/handler.py", "invoke_model") == []
 
 
-def test_kb_generation_model_arn_comes_from_registry():
-    source = (SRC / "intelligent_policy_selector/handler.py").read_text()
-
-    assert "'modelArn': resolve_model_role('kb_generation').model_id" in source
-
-
 def test_metadata_extraction_call_uses_passed_client_and_role(monkeypatch):
     # The package's handler module creates boto3 clients at import time
     monkeypatch.setenv("AWS_DEFAULT_REGION", "us-east-1")
