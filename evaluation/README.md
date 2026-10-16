@@ -37,7 +37,7 @@ Results go to `evaluation/results/<timestamp>/`:
 
 Claude Haiku 4.5 is included only if Bedrock reports it `ACTIVE` when the run starts, and the report records that check. Use `--models` to choose the candidates; the as-shipped row always runs.
 
-The 2026-10-16 run (3 trials, 4 rows plus Claude Haiku 4.5) had an estimated model cost of about $0.30, computed from token counts and the price table. The dry run prints an estimate before you spend anything.
+The committed run (`results/2026-10-16-run2/`: 4 rows, 3 trials per PDF case) had an estimated model cost of $0.27, computed from token counts and the price table. The dry run prints an estimate before you spend anything.
 
 ## Tests
 
@@ -50,7 +50,7 @@ The tests need no AWS credentials. They use a fake Bedrock client.
 ## Limits
 
 - Three synthetic PDFs are a small sample. Results describe these documents only, and the report makes no ranking claims.
-- Scores reflect what the pipeline returns after its own post-processing. Two pipeline behaviors affect every row equally, and the report notes both:
+- Scores reflect what the pipeline returns after its own post-processing. Two pipeline behaviors affected every row equally in the committed run, and the report notes both:
   - Payor normalization drops "Anthem" from "Anthem Blue Cross Blue Shield".
   - The FHIR route keeps only the first CPT code in a bundle.
 - Prices come from the AWS Price List API, dated in `pricing.json`. Re-check them before relying on cost figures.
