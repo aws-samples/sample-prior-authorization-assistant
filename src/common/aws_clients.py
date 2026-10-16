@@ -26,10 +26,10 @@ class ModelUsage:
     """Token usage and latency for one model invocation"""
     model_id: str
     role: Optional[str]
-    input_tokens: int
-    output_tokens: int
-    latency_ms: int
-    stop_reason: str
+    input_tokens: Optional[int]
+    output_tokens: Optional[int]
+    latency_ms: Optional[int]
+    stop_reason: Optional[str]
 
 
 _usage_observers: List[Callable[[ModelUsage], None]] = []
@@ -73,22 +73,30 @@ def _converse(client, model_id: str, prompt: str, max_tokens: int,
             inferenceConfig=inference_config
         )
 
-        # Reasoning models return reasoningContent blocks before the text
-        content = response['output']['message']['content']
-        text = "".join(
-            block['text'] for block in content if 'text' in block
-        )
-
+        usage = response.get('usage', {})
         _notify_usage_observers(ModelUsage(
             model_id=model_id,
             role=role,
-            input_tokens=response['usage']['inputTokens'],
-            output_tokens=response['usage']['outputTokens'],
-            latency_ms=response['metrics']['latencyMs'],
-            stop_reason=response['stopReason']
+            input_tokens=usage.get('inputTokens'),
+            output_tokens=usage.get('outputTokens'),
+            latency_ms=response.get('metrics', {}).get('latencyMs'),
+            stop_reason=response.get('stopReason')
         ))
-        return text
 
+        # Reasoning models return reasoningContent blocks before the text.
+        # As with the previous content[0]['text'] parsing, an empty text
+        # block yields "" and a response without any text block is an error.
+        content = response['output']['message']['content']
+        text_blocks = [block['text'] for block in content if 'text' in block]
+        if not text_blocks:
+            raise AWSServiceError(
+                "Bedrock model returned no text blocks "
+                f"(stopReason: {response.get('stopReason')})"
+            )
+        return "".join(text_blocks)
+
+    except AWSServiceError:
+        raise
     except ClientError as e:
         error_code = e.response['Error']['Code']
         if error_code == 'ThrottlingException':

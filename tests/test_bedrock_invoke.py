@@ -141,9 +141,7 @@ def test_reasoning_blocks_are_excluded(stubbed_service):
     assert service.invoke_model(NOVA_PRO, PROMPT, 300) == "Answer."
 
 
-def test_truncated_response_returns_empty_and_reports_stop_reason(
-    stubbed_service, observed
-):
+def test_truncated_response_without_text_blocks_raises(stubbed_service, observed):
     service, stubber = stubbed_service
     stubber.add_response(
         "converse",
@@ -155,8 +153,64 @@ def test_truncated_response_returns_empty_and_reports_stop_reason(
         _request(NOVA_PRO, {"maxTokens": 20, "temperature": 0.1, "topP": 0.9}),
     )
 
-    assert service.invoke_model(NOVA_PRO, PROMPT, 20) == ""
+    with pytest.raises(AWSServiceError, match="max_tokens") as excinfo:
+        service.invoke_model(NOVA_PRO, PROMPT, 20)
+    assert type(excinfo.value) is AWSServiceError
+    assert "Unexpected error" not in str(excinfo.value)
     assert observed[-1].stop_reason == "max_tokens"
+
+
+def test_response_without_text_blocks_raises(stubbed_service):
+    service, stubber = stubbed_service
+    stubber.add_response(
+        "converse",
+        _response([], stop_reason="end_turn"),
+        _request(SONNET_4_6, {"maxTokens": 100, "temperature": 0.0}),
+    )
+
+    with pytest.raises(AWSServiceError, match="end_turn"):
+        service.invoke_role("clinical_criteria_extraction", PROMPT, 100)
+
+
+@pytest.mark.parametrize(
+    "content",
+    [[{"text": ""}], [{"text": ""}, {"text": ""}]],
+    ids=["one-empty-text", "all-empty-text"],
+)
+def test_empty_text_block_returns_empty_string_as_before(stubbed_service, content):
+    """Parity with the previous content[0]['text'] parsing (returned "")."""
+    service, stubber = stubbed_service
+    stubber.add_response(
+        "converse",
+        _response(content, stop_reason="end_turn"),
+        _request(SONNET_4_6, {"maxTokens": 100, "temperature": 0.0}),
+    )
+
+    assert service.invoke_role("clinical_criteria_extraction", PROMPT, 100) == ""
+
+
+def test_missing_usage_fields_do_not_discard_text(observed):
+    # botocore's response shape requires usage and metrics, so this guards
+    # against non-standard clients rather than a documented API response.
+    client = MagicMock()
+    client.converse.return_value = {
+        "output": {"message": {"role": "assistant", "content": [{"text": "ok"}]}},
+        "stopReason": "end_turn",
+    }
+
+    assert aws_clients.converse_role(client, "gap_analysis", PROMPT, 100) == "ok"
+    assert (observed[-1].input_tokens, observed[-1].latency_ms) == (None, None)
+
+
+def test_partial_text_at_token_limit_is_returned(stubbed_service):
+    service, stubber = stubbed_service
+    stubber.add_response(
+        "converse",
+        _response([{"text": "Partial answ"}], stop_reason="max_tokens"),
+        _request(NOVA_PRO, {"maxTokens": 5, "temperature": 0.1, "topP": 0.9}),
+    )
+
+    assert service.invoke_model(NOVA_PRO, PROMPT, 5) == "Partial answ"
 
 
 def test_observer_receives_usage(stubbed_service, observed):
