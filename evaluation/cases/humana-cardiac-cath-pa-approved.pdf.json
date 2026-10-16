@@ -25,5 +25,10 @@
       "I25.10": "page 3"
     }
   },
-  "confirmed": false
+  "confirmed": true,
+  "review": {
+    "cpt_codes": "confirmed by Andrew Wint, 2026-10-16",
+    "icd_codes": "confirmed by Andrew Wint, 2026-10-16",
+    "payor": "read from the PDF's 'Payor:' line; not separately reviewed"
+  }
 }
