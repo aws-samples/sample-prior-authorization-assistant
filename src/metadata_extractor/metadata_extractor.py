@@ -10,7 +10,7 @@ import json
 from typing import Dict, Any, List
 import structlog
 
-from common.aws_clients import converse_role
+from common.bedrock_converse import converse_role
 
 logger = structlog.get_logger(__name__)
 

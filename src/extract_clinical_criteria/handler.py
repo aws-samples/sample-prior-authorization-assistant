@@ -15,7 +15,7 @@ from botocore.config import Config
 from typing import Dict, Any, List
 import structlog
 
-from common.aws_clients import converse_role
+from common.bedrock_converse import converse_role
 from common.models import ClinicalCriterion
 from common.exceptions import PriorAuthException
 from common.logging_config import get_logger, get_audit_logger

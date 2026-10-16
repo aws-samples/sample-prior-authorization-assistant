@@ -269,3 +269,21 @@ def test_other_client_errors_surface_as_aws_service_error(stubbed_service):
     with pytest.raises(AWSServiceError) as excinfo:
         service.invoke_role("gap_analysis", PROMPT, 100)
     assert not isinstance(excinfo.value, BedrockThrottlingException)
+
+
+def test_only_first_text_block_is_returned_as_before(stubbed_service):
+    """Parity with the previous content[0]['text'] parsing."""
+    service, stubber = stubbed_service
+    stubber.add_response(
+        "converse",
+        _response(
+            [
+                {"reasoningContent": {"reasoningText": {"text": "thinking..."}}},
+                {"text": '{"a": 1'},
+                {"text": "}"},
+            ]
+        ),
+        _request(NOVA_PRO, {"maxTokens": 100, "temperature": 0.1, "topP": 0.9}),
+    )
+
+    assert service.invoke_model(NOVA_PRO, PROMPT, 100) == '{"a": 1'
