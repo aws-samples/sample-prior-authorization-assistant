@@ -77,7 +77,6 @@ class GapAnalysisEngine:
     
     def __init__(self):
         self.bedrock_service = get_bedrock_service()
-        self.model_id = "amazon.nova-pro-v1:0"
     
     @handle_processing_errors
     @monitor_performance
@@ -460,8 +459,8 @@ Return only the JSON object, no additional text.
 """
         
         try:
-            response = self.bedrock_service.invoke_model(
-                model_id=self.model_id,
+            response = self.bedrock_service.invoke_role(
+                "gap_analysis",
                 prompt=prompt,
                 max_tokens=2000
             )

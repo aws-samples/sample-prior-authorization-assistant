@@ -56,7 +56,6 @@ class ClinicalCriteriaExtractor:
     
     def __init__(self):
         self.bedrock_service = get_bedrock_service()
-        self.model_id = "amazon.nova-pro-v1:0"
     
     @handle_processing_errors
     @monitor_performance
@@ -193,8 +192,8 @@ Service Category: {selected_policy.metadata.get('service-category', 'unknown')}
         prompt = self._create_criteria_extraction_prompt(policy_content, extracted_data)
         
         try:
-            response = self.bedrock_service.invoke_model(
-                model_id=self.model_id,
+            response = self.bedrock_service.invoke_role(
+                "policy_criteria_extraction",
                 prompt=prompt,
                 max_tokens=4000
             )
@@ -610,7 +609,6 @@ class CriteriaEnhancementService:
     
     def __init__(self):
         self.bedrock_service = get_bedrock_service()
-        self.model_id = "amazon.nova-pro-v1:0"
     
     @handle_processing_errors
     def enhance_criteria_with_context(self, criteria: List[ClinicalCriterion], 

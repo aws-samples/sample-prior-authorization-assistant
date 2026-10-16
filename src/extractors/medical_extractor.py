@@ -49,7 +49,6 @@ class MedicalDataExtractor:
     
     def __init__(self):
         self.bedrock_service = get_bedrock_service()
-        self.model_id = "amazon.nova-pro-v1:0"
     
     def _normalize_state_code(self, state_value: str) -> Optional[str]:
         """
@@ -192,8 +191,8 @@ class MedicalDataExtractor:
         prompt = self._create_extraction_prompt(text)
         
         try:
-            response = self.bedrock_service.invoke_model(
-                model_id=self.model_id,
+            response = self.bedrock_service.invoke_role(
+                "medical_extraction",
                 prompt=prompt,
                 max_tokens=4000
             )
