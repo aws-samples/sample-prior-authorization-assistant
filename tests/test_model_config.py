@@ -5,6 +5,7 @@ import os
 import pytest
 
 from common import model_config
+from common.exceptions import ConfigurationError
 from common.model_config import ModelRole, resolve
 
 NOVA_PRO = "amazon.nova-pro-v1:0"
@@ -106,3 +107,42 @@ def test_override_equal_to_default_keeps_full_defaults(monkeypatch):
     monkeypatch.setenv("PA_MODEL_ID_GAP_ANALYSIS", NOVA_PRO)
 
     assert resolve("gap_analysis") == ModelRole(NOVA_PRO, temperature=0.1, top_p=0.9)
+
+
+def test_override_values_are_stripped(monkeypatch):
+    monkeypatch.setenv("PA_MODEL_ID_GAP_ANALYSIS", "  model-b  ")
+    monkeypatch.setenv("PA_TEMPERATURE_GAP_ANALYSIS", " 0.2 ")
+
+    assert resolve("gap_analysis") == ModelRole("model-b", temperature=0.2)
+
+
+def test_whitespace_override_equal_to_default_keeps_defaults(monkeypatch):
+    monkeypatch.setenv("PA_MODEL_ID_GAP_ANALYSIS", f" {NOVA_PRO} ")
+
+    assert resolve("gap_analysis") == model_config.DEFAULTS["gap_analysis"]
+
+
+def test_blank_override_is_ignored(monkeypatch):
+    monkeypatch.setenv("PA_MODEL_ID", "   ")
+
+    assert resolve("gap_analysis") == model_config.DEFAULTS["gap_analysis"]
+
+
+@pytest.mark.parametrize("value", ["abc", "nan", "inf", "-0.1", "1.5"])
+@pytest.mark.parametrize("setting", ["TEMPERATURE", "TOP_P"])
+def test_invalid_sampling_override_raises_configuration_error(
+    monkeypatch, setting, value
+):
+    monkeypatch.setenv("PA_MODEL_ID_GAP_ANALYSIS", "model-b")
+    monkeypatch.setenv(f"PA_{setting}_GAP_ANALYSIS", value)
+
+    with pytest.raises(ConfigurationError, match=f"PA_{setting}_GAP_ANALYSIS"):
+        resolve("gap_analysis")
+
+
+def test_kb_generation_ignores_sampling_overrides(monkeypatch):
+    monkeypatch.setenv("PA_MODEL_ID_KB_GENERATION", "model-b")
+    monkeypatch.setenv("PA_TEMPERATURE_KB_GENERATION", "not-a-number")
+    monkeypatch.setenv("PA_TOP_P_KB_GENERATION", "0.5")
+
+    assert resolve("kb_generation") == ModelRole("model-b")

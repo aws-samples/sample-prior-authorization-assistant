@@ -8,16 +8,22 @@ Overrides (environment variables):
 - PA_MODEL_ID_<ROLE>: model ID for one role (takes precedence)
 - PA_MODEL_ID: model ID for every role
 - PA_TEMPERATURE_<ROLE>, PA_TOP_P_<ROLE>: sampling settings for an
-  overridden role
+  overridden role, each a number from 0 to 1 (ignored for kb_generation)
+
+Values are stripped; blank values count as unset. Invalid sampling values
+raise ConfigurationError.
 
 Valid sampling settings depend on the model (some reject temperature and
 top_p together, some reject any non-default value), so an overridden role
 does not inherit the default role's settings.
 """
 
+import math
 import os
 from dataclasses import dataclass
 from typing import Dict, Optional
+
+from .exceptions import ConfigurationError
 
 NOVA_PRO = "amazon.nova-pro-v1:0"
 CLAUDE_SONNET_4_6 = "us.anthropic.claude-sonnet-4-6"
@@ -47,6 +53,9 @@ DEFAULTS: Dict[str, ModelRole] = {
     "kb_generation": ModelRole(CLAUDE_SONNET_4_6),
 }
 
+# Roles whose call site sends no sampling settings (RetrieveAndGenerate)
+_NO_SAMPLING_ROLES = {"kb_generation"}
+
 
 def resolve(role: str) -> ModelRole:
     """Resolve the model and sampling settings for a pipeline role"""
@@ -55,18 +64,35 @@ def resolve(role: str) -> ModelRole:
 
     default = DEFAULTS[role]
     suffix = role.upper()
-    model_id = os.getenv(f"PA_MODEL_ID_{suffix}") or os.getenv("PA_MODEL_ID")
+    model_id = _env(f"PA_MODEL_ID_{suffix}") or _env("PA_MODEL_ID")
 
     if not model_id or model_id == default.model_id:
         return default
+    if role in _NO_SAMPLING_ROLES:
+        return ModelRole(model_id)
 
     return ModelRole(
         model_id,
-        temperature=_optional_float(f"PA_TEMPERATURE_{suffix}"),
-        top_p=_optional_float(f"PA_TOP_P_{suffix}"),
+        temperature=_sampling_value(f"PA_TEMPERATURE_{suffix}"),
+        top_p=_sampling_value(f"PA_TOP_P_{suffix}"),
     )
 
 
-def _optional_float(name: str) -> Optional[float]:
-    value = os.getenv(name)
-    return float(value) if value else None
+def _env(name: str) -> Optional[str]:
+    value = os.getenv(name, "").strip()
+    return value or None
+
+
+def _sampling_value(name: str) -> Optional[float]:
+    value = _env(name)
+    if value is None:
+        return None
+    try:
+        number = float(value)
+    except ValueError:
+        number = math.nan
+    if not (math.isfinite(number) and 0.0 <= number <= 1.0):
+        raise ConfigurationError(
+            f"{name} must be a number from 0 to 1, got {value!r}", config_key=name
+        )
+    return number
