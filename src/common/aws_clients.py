@@ -7,17 +7,52 @@ proper error handling, retry logic, and configuration.
 
 import boto3
 import os
-import json
+from dataclasses import dataclass
 from decimal import Decimal
-from typing import Optional, Dict, Any, List
+from typing import Callable, Optional, Dict, Any, List
 from botocore.exceptions import ClientError, BotoCoreError
 from botocore.config import Config
 import structlog
 
 from .exceptions import AWSServiceError, BedrockThrottlingException
 from .logging_config import get_logger
+from .model_config import resolve as resolve_model_role
 
 logger = get_logger(__name__)
+
+
+@dataclass(frozen=True)
+class ModelUsage:
+    """Token usage and latency for one model invocation"""
+    model_id: str
+    role: Optional[str]
+    input_tokens: int
+    output_tokens: int
+    latency_ms: int
+    stop_reason: str
+
+
+_usage_observers: List[Callable[[ModelUsage], None]] = []
+
+
+def register_usage_observer(observer: Callable[[ModelUsage], None]) -> None:
+    """Register a callable that receives a ModelUsage after each invocation"""
+    _usage_observers.append(observer)
+
+
+def unregister_usage_observer(observer: Callable[[ModelUsage], None]) -> None:
+    """Remove a previously registered usage observer"""
+    if observer in _usage_observers:
+        _usage_observers.remove(observer)
+
+
+def _notify_usage_observers(usage: ModelUsage) -> None:
+    for observer in list(_usage_observers):
+        try:
+            observer(usage)
+        except Exception as e:
+            # Usage reporting must never fail a model invocation
+            logger.warning("Usage observer failed", error=str(e))
 
 
 class AWSClientManager:
@@ -111,37 +146,52 @@ class BedrockService:
         self.logger = get_logger(self.__class__.__name__)
     
     def invoke_model(self, model_id: str, prompt: str, max_tokens: int = 4000) -> str:
-        """Invoke Bedrock model with error handling and retry logic - Updated for Nova models"""
+        """Invoke a Bedrock model with the original fixed sampling settings"""
+        # Low temperature for consistent medical analysis
+        return self._converse(model_id, prompt, max_tokens,
+                              temperature=0.1, top_p=0.9)
+
+    def invoke_role(self, role: str, prompt: str, max_tokens: int) -> str:
+        """Invoke the model configured for a pipeline role"""
+        config = resolve_model_role(role)
+        return self._converse(config.model_id, prompt, max_tokens,
+                              temperature=config.temperature,
+                              top_p=config.top_p, role=role)
+
+    def _converse(self, model_id: str, prompt: str, max_tokens: int,
+                  temperature: Optional[float] = None,
+                  top_p: Optional[float] = None,
+                  role: Optional[str] = None) -> str:
+        """Call the Converse API and return the response text"""
         try:
-            # Nova model configuration (Messages API format)
-            body = {
-                "messages": [
-                    {
-                        "role": "user",
-                        "content": [
-                            {
-                                "text": prompt
-                            }
-                        ]
-                    }
-                ],
-                "inferenceConfig": {
-                    "max_new_tokens": max_tokens,
-                    "temperature": 0.1,  # Low temperature for consistent medical analysis
-                    "top_p": 0.9
-                }
-            }
-            
-            response = self.bedrock_client.invoke_model(
+            inference_config: Dict[str, Any] = {"maxTokens": max_tokens}
+            if temperature is not None:
+                inference_config["temperature"] = temperature
+            if top_p is not None:
+                inference_config["topP"] = top_p
+
+            response = self.bedrock_client.converse(
                 modelId=model_id,
-                body=json.dumps(body),
-                contentType='application/json'
+                messages=[{"role": "user", "content": [{"text": prompt}]}],
+                inferenceConfig=inference_config
             )
-            
-            response_body = json.loads(response['body'].read())
-            # Nova response format
-            return response_body['output']['message']['content'][0]['text']
-            
+
+            # Reasoning models return reasoningContent blocks before the text
+            content = response['output']['message']['content']
+            text = "".join(
+                block['text'] for block in content if 'text' in block
+            )
+
+            _notify_usage_observers(ModelUsage(
+                model_id=model_id,
+                role=role,
+                input_tokens=response['usage']['inputTokens'],
+                output_tokens=response['usage']['outputTokens'],
+                latency_ms=response['metrics']['latencyMs'],
+                stop_reason=response['stopReason']
+            ))
+            return text
+
         except ClientError as e:
             error_code = e.response['Error']['Code']
             if error_code == 'ThrottlingException':
