@@ -291,6 +291,7 @@ def test_dry_run_makes_no_aws_calls(capsys):
     output = capsys.readouterr().out
     assert "Dry run (no AWS calls)" in output
     assert "3 PDF exercise a model, 4 FHIR controls" in output
-    assert "us.anthropic.claude-haiku-4-5-20251001-v1:0" in output
+    rows_line = next(line for line in output.splitlines() if line.startswith("Rows:"))
+    assert "us.anthropic.claude-haiku-4-5-20251001-v1:0" in rows_line
     assert "Not run separately: amazon.nova-pro-v1:0" in output
     assert "6 calls per trial" in output

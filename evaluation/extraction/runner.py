@@ -443,7 +443,7 @@ def _dry_run_text(cases, rows, runs, trials, pricing, skipped) -> str:
     total_typ = total_worst = 0.0
     for row, entry in estimate.items():
         lines.append(
-            f"  {row:48s} {entry['calls']:3d} calls  "
+            f"  {row:48s} {entry['calls']:3d} trials  "
             f"typical ${entry['typical_usd']:.4f}"
             f"  worst ${entry['worst_usd']:.4f}"
         )
