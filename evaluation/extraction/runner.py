@@ -69,6 +69,13 @@ NOTES = [
     "and the code continues on text detection only, as it does in production.",
     "FHIR cases make no model call (the FHIR route parses codes from the "
     "bundle). They run once per row as a control.",
+    "Payor results pass through MedicalCodeValidator.normalize_payor_name "
+    "(src/common/validators.py), which maps any name containing 'Blue Cross Blue "
+    "Shield' to 'Blue Cross Blue Shield' and drops 'Anthem'. The Anthem PDF's "
+    "payor therefore scores as wrong for every row, independent of the model.",
+    "The FHIR route keeps only the first CPT code in a bundle "
+    "(src/extractors/fhir_extractor.py, single service_info.cpt_code), so "
+    "multi-procedure bundles lose codes in the FHIR control rows.",
 ]
 
 MOTO_CONFIG = {
