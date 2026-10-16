@@ -146,3 +146,13 @@ def test_kb_generation_ignores_sampling_overrides(monkeypatch):
     monkeypatch.setenv("PA_TOP_P_KB_GENERATION", "0.5")
 
     assert resolve("kb_generation") == ModelRole("model-b")
+
+
+@pytest.mark.parametrize("value, expected", [("0", 0.0), ("1", 1.0), ("0.0", 0.0)])
+@pytest.mark.parametrize("setting", ["TEMPERATURE", "TOP_P"])
+def test_sampling_bounds_are_inclusive(monkeypatch, setting, value, expected):
+    monkeypatch.setenv("PA_MODEL_ID_GAP_ANALYSIS", "model-b")
+    monkeypatch.setenv(f"PA_{setting}_GAP_ANALYSIS", value)
+
+    field = setting.lower()
+    assert getattr(resolve("gap_analysis"), field) == expected

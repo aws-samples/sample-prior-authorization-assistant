@@ -287,3 +287,19 @@ def test_only_first_text_block_is_returned_as_before(stubbed_service):
     )
 
     assert service.invoke_model(NOVA_PRO, PROMPT, 100) == '{"a": 1'
+
+
+@pytest.mark.parametrize(
+    "failure",
+    [RuntimeError("connection reset"), KeyError("output")],
+    ids=["client-raises", "malformed-response"],
+)
+def test_unexpected_errors_raise_application_error(failure):
+    client = MagicMock()
+    if isinstance(failure, KeyError):
+        client.converse.return_value = {"stopReason": "end_turn"}
+    else:
+        client.converse.side_effect = failure
+
+    with pytest.raises(AWSServiceError, match="Unexpected error"):
+        aws_clients.converse_role(client, "gap_analysis", PROMPT, 100)
