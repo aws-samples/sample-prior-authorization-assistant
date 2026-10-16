@@ -25,7 +25,7 @@ ALL_ROLES = NOVA_ROLES + SONNET_SAMPLED_ROLES + ["kb_generation"]
 @pytest.fixture(autouse=True)
 def clear_overrides(monkeypatch):
     for name in list(os.environ):
-        if name.startswith(("PA_MODEL_ID", "PA_TOP_P_")):
+        if name.startswith(("PA_MODEL_ID", "PA_TEMPERATURE_", "PA_TOP_P_")):
             monkeypatch.delenv(name)
 
 
@@ -69,17 +69,37 @@ def test_empty_override_is_ignored(monkeypatch):
     assert resolve("gap_analysis") == model_config.DEFAULTS["gap_analysis"]
 
 
-def test_override_drops_default_top_p_and_keeps_temperature(monkeypatch):
+def test_override_drops_default_sampling_settings(monkeypatch):
     monkeypatch.setenv("PA_MODEL_ID_GAP_ANALYSIS", "model-b")
 
-    assert resolve("gap_analysis") == ModelRole("model-b", temperature=0.1)
+    assert resolve("gap_analysis") == ModelRole("model-b")
+
+
+def test_override_with_explicit_temperature(monkeypatch):
+    monkeypatch.setenv("PA_MODEL_ID_GAP_ANALYSIS", "model-b")
+    monkeypatch.setenv("PA_TEMPERATURE_GAP_ANALYSIS", "0.2")
+
+    assert resolve("gap_analysis") == ModelRole("model-b", temperature=0.2)
 
 
 def test_override_with_explicit_top_p(monkeypatch):
     monkeypatch.setenv("PA_MODEL_ID_GAP_ANALYSIS", "model-b")
     monkeypatch.setenv("PA_TOP_P_GAP_ANALYSIS", "0.8")
 
-    assert resolve("gap_analysis") == ModelRole("model-b", temperature=0.1, top_p=0.8)
+    assert resolve("gap_analysis") == ModelRole("model-b", top_p=0.8)
+
+
+def test_global_override_drops_sampling_settings_for_every_role(monkeypatch):
+    monkeypatch.setenv("PA_MODEL_ID", "us.anthropic.claude-sonnet-5-5")
+
+    for role in ALL_ROLES:
+        assert resolve(role) == ModelRole("us.anthropic.claude-sonnet-5-5")
+
+
+def test_sampling_overrides_ignored_without_model_override(monkeypatch):
+    monkeypatch.setenv("PA_TEMPERATURE_GAP_ANALYSIS", "0.9")
+
+    assert resolve("gap_analysis") == model_config.DEFAULTS["gap_analysis"]
 
 
 def test_override_equal_to_default_keeps_full_defaults(monkeypatch):

@@ -7,13 +7,16 @@ Defaults match the values each call site used before the registry existed.
 Overrides (environment variables):
 - PA_MODEL_ID_<ROLE>: model ID for one role (takes precedence)
 - PA_MODEL_ID: model ID for every role
-- PA_TOP_P_<ROLE>: top_p for an overridden role (the default top_p is
-  dropped when a role's model is overridden, since some models reject
-  temperature and top_p together)
+- PA_TEMPERATURE_<ROLE>, PA_TOP_P_<ROLE>: sampling settings for an
+  overridden role
+
+Valid sampling settings depend on the model (some reject temperature and
+top_p together, some reject any non-default value), so an overridden role
+does not inherit the default role's settings.
 """
 
 import os
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from typing import Dict, Optional
 
 NOVA_PRO = "amazon.nova-pro-v1:0"
@@ -57,5 +60,13 @@ def resolve(role: str) -> ModelRole:
     if not model_id or model_id == default.model_id:
         return default
 
-    top_p = os.getenv(f"PA_TOP_P_{suffix}")
-    return replace(default, model_id=model_id, top_p=float(top_p) if top_p else None)
+    return ModelRole(
+        model_id,
+        temperature=_optional_float(f"PA_TEMPERATURE_{suffix}"),
+        top_p=_optional_float(f"PA_TOP_P_{suffix}"),
+    )
+
+
+def _optional_float(name: str) -> Optional[float]:
+    value = os.getenv(name)
+    return float(value) if value else None
