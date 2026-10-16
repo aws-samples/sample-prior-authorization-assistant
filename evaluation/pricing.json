@@ -1,0 +1,32 @@
+{
+  "as_of": "2026-10-16",
+  "source": "AWS Price List API (pricing:GetProducts), us-east-1, OnDemand terms. Service codes: AmazonBedrockFoundationModels (Anthropic models), AmazonBedrock (Amazon and OpenAI models).",
+  "currency": "USD",
+  "unit": "per 1K tokens",
+  "notes": [
+    "Claude models are invoked through us. geographic inference profiles. They are priced at the Regional on-demand rate (usage type USE1-MP:USE1_*TokenCount-Units), not the lower Global rate, which applies to global. profiles.",
+    "Prompt-cache, batch, provisioned and latency-optimized prices are excluded; this harness uses none of them."
+  ],
+  "models": {
+    "us.anthropic.claude-sonnet-4-6": {
+      "input": 0.0033,
+      "output": 0.0165,
+      "usage_types": ["USE1-MP:USE1_InputTokenCount-Units", "USE1-MP:USE1_OutputTokenCount-Units"]
+    },
+    "us.anthropic.claude-haiku-4-5-20251001-v1:0": {
+      "input": 0.0011,
+      "output": 0.0055,
+      "usage_types": ["USE1-MP:USE1_InputTokenCount-Units", "USE1-MP:USE1_OutputTokenCount-Units"]
+    },
+    "amazon.nova-pro-v1:0": {
+      "input": 0.0008,
+      "output": 0.0032,
+      "usage_types": ["USE1-NovaPro-input-tokens", "USE1-NovaPro-output-tokens"]
+    },
+    "openai.gpt-oss-120b-1:0": {
+      "input": 0.00015,
+      "output": 0.0006,
+      "usage_types": ["USE1-gpt-oss-120b-input-tokens", "USE1-gpt-oss-120b-output-tokens"]
+    }
+  }
+}
