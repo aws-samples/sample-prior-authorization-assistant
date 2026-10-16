@@ -93,3 +93,16 @@ def test_case_files_are_formatted_as_written():
             path.read_text()
             == json.dumps(json.loads(path.read_text()), indent=2) + "\n"
         )
+
+
+@pytest.mark.parametrize(
+    "case_id", sorted(cid for cid, case in BY_ID.items() if case["format"] == "pdf")
+)
+def test_pdf_builder_reproduces_confirmed_values(case_id):
+    pytest.importorskip("pypdf")
+    case = BY_ID[case_id]
+
+    rebuilt = gt.build_pdf_case(gt.ROOT / case["source_file"])
+
+    assert rebuilt["expected"] == case["expected"]
+    assert rebuilt["provenance"] == case["provenance"]

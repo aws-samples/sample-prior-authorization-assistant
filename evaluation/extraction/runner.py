@@ -22,7 +22,7 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any, Dict, Iterator, List, Optional
+from typing import Any, Dict, Iterator, List, Optional, Tuple
 from unittest import mock
 
 from evaluation import ground_truth as gt
@@ -34,6 +34,9 @@ EXTRACTION_TABLE = "pa-eval-extraction"
 ROLE = "medical_extraction"
 ROLE_TEMPERATURE = 0.1  # the medical_extraction default (src/common/model_config.py)
 MAX_TOKENS = 4000  # the medical_extraction call site's max_tokens
+# Most model calls one trial can make: nested retry_with_backoff in
+# medical_extractor (3 attempts x 2)
+WORST_CASE_CALLS = 6
 
 CANDIDATES = [
     "us.anthropic.claude-sonnet-4-6",
@@ -72,7 +75,7 @@ NOTES = [
     "Payor results pass through MedicalCodeValidator.normalize_payor_name "
     "(src/common/validators.py), which maps any name containing 'Blue Cross Blue "
     "Shield' to 'Blue Cross Blue Shield' and drops 'Anthem'. The Anthem PDF's "
-    "payor therefore scores as wrong for every row, independent of the model.",
+    "payor scored as wrong for every row in this run.",
     "The FHIR route keeps only the first CPT code in a bundle "
     "(src/extractors/fhir_extractor.py, single service_info.cpt_code), so "
     "multi-procedure bundles lose codes in the FHIR control rows.",
@@ -83,35 +86,65 @@ MOTO_CONFIG = {
 }
 
 
-def build_rows(models: List[str]) -> List[Dict[str, Any]]:
-    rows = [
-        {
-            "row": "as-shipped",
-            "model_id": "amazon.nova-pro-v1:0",
-            "env": {},
-            "sampling": {"temperature": 0.1, "top_p": 0.9},
-            "sampling_note": "role defaults",
-        }
-    ]
+PA_PREFIXES = ("PA_MODEL_ID", "PA_TEMPERATURE_", "PA_TOP_P_")
+
+
+def row_environ(row_env: Dict[str, str]) -> Dict[str, str]:
+    """The process environment for one row: ambient PA_* removed, row env added"""
+    environ = {k: v for k, v in os.environ.items() if not k.startswith(PA_PREFIXES)}
+    environ.update(row_env)
+    return environ
+
+
+def resolve_row(row_env: Dict[str, str]) -> Dict[str, Any]:
+    """Model and sampling the medical_extraction call will actually send"""
+    from common.model_config import resolve
+
+    with mock.patch.dict(os.environ, row_environ(row_env), clear=True):
+        config = resolve(ROLE)
+    return {
+        "model_id": config.model_id,
+        "sampling": {"temperature": config.temperature, "top_p": config.top_p},
+    }
+
+
+def build_rows(models: List[str]) -> Tuple[List[Dict[str, Any]], List[str]]:
+    """Rows to run, plus notes about candidates not run separately"""
+    rows = [_row("as-shipped", {}, "role defaults")]
+    skipped = []
     for model_id in models:
+        env = {"PA_MODEL_ID_MEDICAL_EXTRACTION": model_id}
+        note = None
         if model_id in REJECTS_NON_DEFAULT_SAMPLING:
-            env, sampling = {}, {"temperature": None, "top_p": None}
             note = "model rejects non-default sampling; runs at its own defaults"
         else:
-            env = {"PA_TEMPERATURE_MEDICAL_EXTRACTION": str(ROLE_TEMPERATURE)}
-            sampling = {"temperature": ROLE_TEMPERATURE, "top_p": None}
-            note = None
-        env["PA_MODEL_ID_MEDICAL_EXTRACTION"] = model_id
-        rows.append(
-            {
-                "row": model_id,
-                "model_id": model_id,
-                "env": env,
-                "sampling": sampling,
-                "sampling_note": note,
-            }
-        )
-    return rows
+            env["PA_TEMPERATURE_MEDICAL_EXTRACTION"] = str(ROLE_TEMPERATURE)
+        row = _row(model_id, env, note)
+        same = [r for r in rows if _sends_same(r, row)]
+        if same:
+            skipped.append(
+                f"{model_id} is not run as a separate row: with this override it "
+                f"sends the same model and sampling as the {same[0]['row']} row "
+                "(an override equal to the default model keeps the default sampling)."
+            )
+            continue
+        rows.append(row)
+    return rows, skipped
+
+
+def _sends_same(a: Dict[str, Any], b: Dict[str, Any]) -> bool:
+    return (a["model_id"], a["sampling"]) == (b["model_id"], b["sampling"])
+
+
+def _row(label: str, env: Dict[str, str], note: Optional[str]) -> Dict[str, Any]:
+    resolved = resolve_row(env)
+    return {
+        "row": label,
+        "model_id": resolved["model_id"],
+        "env": env,
+        "sampling": resolved["sampling"],
+        "sampling_note": note,
+    }
 
 
 def check_lifecycle(checked_at: str) -> List[Dict[str, Any]]:
@@ -159,7 +192,8 @@ def estimate_cost(runs, pricing) -> Dict[str, Any]:
             continue
         cost_in = input_tokens / 1000 * price["input"]
         entry["typical_usd"] += cost_in + 800 / 1000 * price["output"]
-        entry["worst_usd"] += 2 * (cost_in + MAX_TOKENS / 1000 * price["output"])
+        worst_call = cost_in + MAX_TOKENS / 1000 * price["output"]
+        entry["worst_usd"] += WORST_CASE_CALLS * worst_call
     return per_row
 
 
@@ -220,7 +254,11 @@ def run_case(handler_module, aws_clients, row, case, trial) -> Dict[str, Any]:
         if record.role == ROLE:
             usage.append(record)
 
-    replay = ReplayTextractClient(document.name) if case["format"] == "pdf" else None
+    replay = (
+        ReplayTextractClient(document.name, bucket=DOCUMENTS_BUCKET)
+        if case["format"] == "pdf"
+        else None
+    )
     document_id = f"eval-{document.stem}-{trial}"
     event = {
         "document_id": document_id,
@@ -247,7 +285,7 @@ def run_case(handler_module, aws_clients, row, case, trial) -> Dict[str, Any]:
     }
     start = time.monotonic()
     bedrock_converse.register_usage_observer(observe)
-    env_patch = mock.patch.dict(os.environ, row["env"])
+    env_patch = mock.patch.dict(os.environ, row_environ(row["env"]), clear=True)
     textract_patch = mock.patch.object(
         aws_clients.AWSClientManager,
         "get_textract_client",
@@ -272,6 +310,11 @@ def run_case(handler_module, aws_clients, row, case, trial) -> Dict[str, Any]:
         )
     finally:
         bedrock_converse.unregister_usage_observer(observe)
+    if replay is not None and (replay.mismatch or replay.remaining):
+        problem = (
+            replay.mismatch or f"{replay.remaining} recorded Textract calls unused"
+        )
+        record.update(status="error", error=f"FixtureMismatch: {problem}", result=None)
     record["duration_ms"] = int((time.monotonic() - start) * 1000)
     record["model_calls"] = [
         {
@@ -307,17 +350,21 @@ def main(argv: Optional[List[str]] = None) -> int:
         lifecycle = check_lifecycle(started_at)
         models += [r["model_id"] for r in lifecycle if r["status"] == "ACTIVE"]
 
-    rows = build_rows(models)
+    rows, skipped_rows = build_rows(models)
     runs = plan(cases, rows, args.trials)
 
     if args.dry_run:
-        print(_dry_run_text(cases, rows, runs, args.trials, pricing))
+        all_rows, _ = build_rows(models + list(LIFECYCLE_GATED))
+        all_runs = plan(cases, all_rows, args.trials)
+        print(
+            _dry_run_text(cases, all_rows, all_runs, args.trials, pricing, skipped_rows)
+        )
         return 0
 
     out = args.out or gt.ROOT / "evaluation" / "results" / started_at.replace(":", "")
     out.mkdir(parents=True, exist_ok=True)
     trials = []
-    with mocked_aws(), mock.patch("time.sleep", lambda _s: None):
+    with mocked_aws():
         from common import aws_clients
         from extractors import handler as handler_module
 
@@ -353,7 +400,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         "pricing": {"as_of": pricing["as_of"], "source": pricing["source"]},
         "lifecycle_checks": lifecycle,
         "unavailable_models": UNAVAILABLE_MODELS,
-        "notes": NOTES,
+        "notes": NOTES + skipped_rows,
     }
     (out / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
     _write_report(out, trials, manifest, pricing)
@@ -376,7 +423,7 @@ def _write_report(out: Path, trials, manifest, pricing) -> None:
     report.write_csv(scored, out / "trials.csv")
 
 
-def _dry_run_text(cases, rows, runs, trials, pricing) -> str:
+def _dry_run_text(cases, rows, runs, trials, pricing, skipped) -> str:
     estimate = estimate_cost(runs, pricing)
     pdf = sum(1 for c in cases if c["format"] == "pdf")
     lines = [
@@ -386,10 +433,12 @@ def _dry_run_text(cases, rows, runs, trials, pricing) -> str:
         f"Rows: {', '.join(r['row'] for r in rows)}",
         f"Trials per PDF case: {trials}; FHIR cases run once per row",
         f"Handler invocations: {len(runs)}",
-        f"Lifecycle-gated (checked on a real run): {', '.join(LIFECYCLE_GATED)}",
+        "Lifecycle-gated rows (run only if Bedrock reports them ACTIVE): "
+        f"{', '.join(LIFECYCLE_GATED)}",
+        *[f"Not run separately: {note}" for note in skipped],
         f"Prices: {pricing['as_of']}, {pricing['source']}",
-        "Estimated model cost (typical: 800 output tokens per call; "
-        f"worst: {MAX_TOKENS} output tokens and one retry per call):",
+        "Estimated model cost (typical: one call per trial, 800 output tokens; "
+        f"worst: {WORST_CASE_CALLS} calls per trial, {MAX_TOKENS} output tokens each):",
     ]
     total_typ = total_worst = 0.0
     for row, entry in estimate.items():

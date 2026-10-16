@@ -204,6 +204,10 @@ def _limits(
     lines += [
         "- Failed or truncated trials score zero on every field and count "
         "against their row.",
+        "- Latency is the model latency Bedrock reports (`metrics.latencyMs`), "
+        "summed over a trial's model calls; it is not wall-clock time.",
+        "- Costs are estimates from token counts and the dated price table, not "
+        "billed amounts.",
         "- With this few cases and trials, the results describe these documents "
         "only. This report does not name a winner or rank models beyond the "
         "numbers shown.",
