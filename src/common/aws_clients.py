@@ -55,6 +55,57 @@ def _notify_usage_observers(usage: ModelUsage) -> None:
             logger.warning("Usage observer failed", error=str(e))
 
 
+def _converse(client, model_id: str, prompt: str, max_tokens: int,
+              temperature: Optional[float] = None,
+              top_p: Optional[float] = None,
+              role: Optional[str] = None) -> str:
+    """Call the Converse API with any bedrock-runtime client; return the text"""
+    try:
+        inference_config: Dict[str, Any] = {"maxTokens": max_tokens}
+        if temperature is not None:
+            inference_config["temperature"] = temperature
+        if top_p is not None:
+            inference_config["topP"] = top_p
+
+        response = client.converse(
+            modelId=model_id,
+            messages=[{"role": "user", "content": [{"text": prompt}]}],
+            inferenceConfig=inference_config
+        )
+
+        # Reasoning models return reasoningContent blocks before the text
+        content = response['output']['message']['content']
+        text = "".join(
+            block['text'] for block in content if 'text' in block
+        )
+
+        _notify_usage_observers(ModelUsage(
+            model_id=model_id,
+            role=role,
+            input_tokens=response['usage']['inputTokens'],
+            output_tokens=response['usage']['outputTokens'],
+            latency_ms=response['metrics']['latencyMs'],
+            stop_reason=response['stopReason']
+        ))
+        return text
+
+    except ClientError as e:
+        error_code = e.response['Error']['Code']
+        if error_code == 'ThrottlingException':
+            raise BedrockThrottlingException(f"Bedrock throttling: {str(e)}")
+        raise AWSServiceError(f"Bedrock model invocation failed: {str(e)}")
+    except Exception as e:
+        raise AWSServiceError(f"Unexpected error in Bedrock invocation: {str(e)}")
+
+
+def converse_role(client, role: str, prompt: str, max_tokens: int) -> str:
+    """Invoke the model configured for a pipeline role with the given client"""
+    config = resolve_model_role(role)
+    return _converse(client, config.model_id, prompt, max_tokens,
+                     temperature=config.temperature, top_p=config.top_p,
+                     role=role)
+
+
 class AWSClientManager:
     """Centralized AWS client management with configuration and error handling"""
     
@@ -148,58 +199,13 @@ class BedrockService:
     def invoke_model(self, model_id: str, prompt: str, max_tokens: int = 4000) -> str:
         """Invoke a Bedrock model with the original fixed sampling settings"""
         # Low temperature for consistent medical analysis
-        return self._converse(model_id, prompt, max_tokens,
-                              temperature=0.1, top_p=0.9)
+        return _converse(self.bedrock_client, model_id, prompt, max_tokens,
+                         temperature=0.1, top_p=0.9)
 
     def invoke_role(self, role: str, prompt: str, max_tokens: int) -> str:
         """Invoke the model configured for a pipeline role"""
-        config = resolve_model_role(role)
-        return self._converse(config.model_id, prompt, max_tokens,
-                              temperature=config.temperature,
-                              top_p=config.top_p, role=role)
+        return converse_role(self.bedrock_client, role, prompt, max_tokens)
 
-    def _converse(self, model_id: str, prompt: str, max_tokens: int,
-                  temperature: Optional[float] = None,
-                  top_p: Optional[float] = None,
-                  role: Optional[str] = None) -> str:
-        """Call the Converse API and return the response text"""
-        try:
-            inference_config: Dict[str, Any] = {"maxTokens": max_tokens}
-            if temperature is not None:
-                inference_config["temperature"] = temperature
-            if top_p is not None:
-                inference_config["topP"] = top_p
-
-            response = self.bedrock_client.converse(
-                modelId=model_id,
-                messages=[{"role": "user", "content": [{"text": prompt}]}],
-                inferenceConfig=inference_config
-            )
-
-            # Reasoning models return reasoningContent blocks before the text
-            content = response['output']['message']['content']
-            text = "".join(
-                block['text'] for block in content if 'text' in block
-            )
-
-            _notify_usage_observers(ModelUsage(
-                model_id=model_id,
-                role=role,
-                input_tokens=response['usage']['inputTokens'],
-                output_tokens=response['usage']['outputTokens'],
-                latency_ms=response['metrics']['latencyMs'],
-                stop_reason=response['stopReason']
-            ))
-            return text
-
-        except ClientError as e:
-            error_code = e.response['Error']['Code']
-            if error_code == 'ThrottlingException':
-                raise BedrockThrottlingException(f"Bedrock throttling: {str(e)}")
-            raise AWSServiceError(f"Bedrock model invocation failed: {str(e)}")
-        except Exception as e:
-            raise AWSServiceError(f"Unexpected error in Bedrock invocation: {str(e)}")
-    
     def retrieve_from_knowledge_base(self, knowledge_base_id: str, query: str, 
                                    max_results: int = 10, filter: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Retrieve information from Bedrock Knowledge Base with optional metadata filtering"""

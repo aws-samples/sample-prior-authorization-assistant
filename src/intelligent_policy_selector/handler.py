@@ -18,6 +18,7 @@ import structlog
 
 from .prompt_templates import create_policy_selection_prompt, create_criteria_extraction_prompt
 from common.models import ExtractedData, SelectedPolicy, ClinicalCriterion
+from common.model_config import resolve as resolve_model_role
 from common.exceptions import PolicySelectionError, PriorAuthException
 from common.logging_config import get_logger, get_audit_logger
 from common.decorators import handle_processing_errors
@@ -436,7 +437,7 @@ def select_policy_with_kb(
                 'type': 'KNOWLEDGE_BASE',
                 'knowledgeBaseConfiguration': {
                     'knowledgeBaseId': knowledge_base_id,
-                    'modelArn': 'us.anthropic.claude-sonnet-4-6',
+                    'modelArn': resolve_model_role('kb_generation').model_id,
                     'retrievalConfiguration': {
                         'vectorSearchConfiguration': {
                             'numberOfResults': 5,  # Reduced from 10 since we're using metadata filter

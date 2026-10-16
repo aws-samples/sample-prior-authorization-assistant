@@ -15,6 +15,7 @@ from botocore.config import Config
 from typing import Dict, Any, List
 import structlog
 
+from common.aws_clients import converse_role
 from common.models import ClinicalCriterion
 from common.exceptions import PriorAuthException
 from common.logging_config import get_logger, get_audit_logger
@@ -257,23 +258,10 @@ def extract_clinical_criteria(
     
     try:
         # Use Bedrock to extract criteria with timeout protection
-        response = bedrock_runtime.invoke_model(
-            modelId='us.anthropic.claude-sonnet-4-6',
-            body=json.dumps({
-                'anthropic_version': 'bedrock-2023-05-31',
-                'max_tokens': 4000,
-                'messages': [
-                    {
-                        'role': 'user',
-                        'content': prompt
-                    }
-                ],
-                'temperature': 0.0  # Deterministic extraction
-            })
+        # Deterministic extraction (temperature 0.0 by default)
+        generated_text = converse_role(
+            bedrock_runtime, 'clinical_criteria_extraction', prompt, 4000
         )
-        
-        response_body = json.loads(response['body'].read())
-        generated_text = response_body['content'][0]['text']
         
         criteria_duration = time.time() - criteria_start
         logger.info("Bedrock response received",

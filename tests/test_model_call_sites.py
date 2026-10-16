@@ -5,6 +5,7 @@ and max_tokens the call site used before the registry existed.
 """
 
 import ast
+import os
 from pathlib import Path
 from unittest.mock import create_autospec, patch
 
@@ -13,6 +14,14 @@ import pytest
 from common.aws_clients import BedrockService
 
 SRC = Path(__file__).resolve().parents[1] / "src"
+
+
+@pytest.fixture(autouse=True)
+def clear_overrides(monkeypatch):
+    for name in list(os.environ):
+        if name.startswith(("PA_MODEL_ID", "PA_TEMPERATURE_", "PA_TOP_P_")):
+            monkeypatch.delenv(name)
+
 
 EXPECTED_ROLE_CALLS = {
     "extractors/medical_extractor.py": [("medical_extraction", 4000)],
@@ -30,8 +39,10 @@ def _calls(path, method):
         node
         for node in ast.walk(tree)
         if isinstance(node, ast.Call)
-        and isinstance(node.func, ast.Attribute)
-        and node.func.attr == method
+        and (
+            (isinstance(node.func, ast.Attribute) and node.func.attr == method)
+            or (isinstance(node.func, ast.Name) and node.func.id == method)
+        )
     ]
 
 
@@ -90,3 +101,55 @@ def test_clinical_summary_still_uses_fallback():
     logger.warning.assert_called_once()
     assert "temperature" in logger.warning.call_args.kwargs["error"]
     bedrock_service.invoke_role.assert_not_called()
+
+
+def test_clinical_criteria_handler_uses_its_own_client_and_role():
+    calls = _calls("extract_clinical_criteria/handler.py", "converse_role")
+    assert len(calls) == 1
+    client, role, _prompt, max_tokens = calls[0].args
+
+    # Keeps the module's client, which has a 120s read timeout
+    assert client.id == "bedrock_runtime"
+    assert (role.value, max_tokens.value) == ("clinical_criteria_extraction", 4000)
+    assert _calls("extract_clinical_criteria/handler.py", "invoke_model") == []
+
+
+def test_kb_generation_model_arn_comes_from_registry():
+    source = (SRC / "intelligent_policy_selector/handler.py").read_text()
+
+    assert "'modelArn': resolve_model_role('kb_generation').model_id" in source
+
+
+def test_metadata_extraction_call_uses_passed_client_and_role(monkeypatch):
+    # The package's handler module creates boto3 clients at import time
+    monkeypatch.setenv("AWS_DEFAULT_REGION", "us-east-1")
+    import boto3
+    from botocore.stub import Stubber
+
+    from metadata_extractor.metadata_extractor import _call_bedrock_claude
+
+    client = boto3.client(
+        "bedrock-runtime",
+        region_name="us-east-1",
+        aws_access_key_id="testing",
+        aws_secret_access_key="testing",
+    )
+    with Stubber(client) as stubber:
+        stubber.add_response(
+            "converse",
+            {
+                "output": {
+                    "message": {"role": "assistant", "content": [{"text": "{}"}]}
+                },
+                "stopReason": "end_turn",
+                "usage": {"inputTokens": 1, "outputTokens": 1, "totalTokens": 2},
+                "metrics": {"latencyMs": 1},
+            },
+            {
+                "modelId": "us.anthropic.claude-sonnet-4-6",
+                "messages": [{"role": "user", "content": [{"text": "prompt"}]}],
+                "inferenceConfig": {"maxTokens": 2000, "temperature": 0.0},
+            },
+        )
+
+        assert _call_bedrock_claude(client, "prompt") == "{}"
