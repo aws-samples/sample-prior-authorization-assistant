@@ -1,0 +1,29 @@
+{
+  "case_id": "aetna-spinal-fusion-pa-denied.fhir",
+  "source_file": "samples/aetna-spinal-fusion-pa-denied.json",
+  "format": "fhir",
+  "expected": {
+    "payor": "Aetna",
+    "cpt_codes": [
+      "22558"
+    ],
+    "icd_codes": [
+      "M48.06",
+      "M51.26"
+    ]
+  },
+  "provenance": {
+    "payor": {
+      "text": "Aetna Better Health",
+      "location": "Coverage.payor -> Organization/aetna-insurance"
+    },
+    "cpt_codes": {
+      "22558": "Claim"
+    },
+    "icd_codes": {
+      "M48.06": "Claim",
+      "M51.26": "Claim"
+    }
+  },
+  "confirmed": true
+}

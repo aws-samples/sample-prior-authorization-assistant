@@ -1,0 +1,29 @@
+{
+  "case_id": "humana-cardiac-cath-pa-approved.fhir",
+  "source_file": "samples/humana-cardiac-cath-pa-approved.json",
+  "format": "fhir",
+  "expected": {
+    "payor": "Humana",
+    "cpt_codes": [
+      "93458"
+    ],
+    "icd_codes": [
+      "I20.9",
+      "I25.10"
+    ]
+  },
+  "provenance": {
+    "payor": {
+      "text": "Humana Inc.",
+      "location": "Coverage.payor -> Organization/humana-insurance"
+    },
+    "cpt_codes": {
+      "93458": "Claim"
+    },
+    "icd_codes": {
+      "I20.9": "Claim",
+      "I25.10": "Claim"
+    }
+  },
+  "confirmed": true
+}

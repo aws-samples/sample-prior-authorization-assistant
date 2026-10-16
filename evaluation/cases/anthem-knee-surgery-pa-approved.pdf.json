@@ -1,0 +1,27 @@
+{
+  "case_id": "anthem-knee-surgery-pa-approved.pdf",
+  "source_file": "samples/anthem-knee-surgery-pa-approved.pdf",
+  "format": "pdf",
+  "expected": {
+    "payor": "Anthem",
+    "cpt_codes": [
+      "29881"
+    ],
+    "icd_codes": [
+      "M23.201"
+    ]
+  },
+  "provenance": {
+    "payor": {
+      "text": "Anthem Blue Cross Blue Shield",
+      "location": "page 1"
+    },
+    "cpt_codes": {
+      "29881": "page 1"
+    },
+    "icd_codes": {
+      "M23.201": "page 2"
+    }
+  },
+  "confirmed": false
+}
