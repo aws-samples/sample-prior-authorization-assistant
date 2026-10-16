@@ -50,6 +50,9 @@ def test_import_leaves_logging_configuration_unchanged(module):
         "AWS_CONFIG_FILE": os.devnull,
         "AWS_SHARED_CREDENTIALS_FILE": os.devnull,
     }
+    # Windows needs SYSTEMROOT to start a Python subprocess
+    if "SYSTEMROOT" in os.environ:
+        env["SYSTEMROOT"] = os.environ["SYSTEMROOT"]
     result = subprocess.run(
         [
             sys.executable,
